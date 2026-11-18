@@ -45,7 +45,7 @@ jobs:
         run: |
           python -B scripts/muestra.py _validacion/muestra.cex
           $process = Start-Process -FilePath "$pwd/Ordenador_CE3X.exe" -ArgumentList @('--self-test', "$pwd/_validacion/muestra.cex", "$pwd/_validacion/ordenada.cex", "$pwd/_validacion/resultado.txt") -PassThru -Wait
-          if ($process.ExitCode -ne 0 -or (Get-Content _validacion/resultado.txt -Raw).Trim() -ne 'OK') { throw 'Fallo en interfaz y motor.' }
+          if ($process.ExitCode -ne 0 -or (Get-Content _validacion/resultado.txt -Raw).Trim() -ne 'OK') { Get-Content _validacion/resultado.txt; throw 'Fallo en interfaz y motor.' }
           python -B -c "import sys; sys.path.insert(0,'app'); import ordenador as o; d=o.Document('_validacion/ordenada.cex'); assert d.names[0]=='Fachada sur'; assert d.env[1][1].state['descripcion']=='Norte 2'"
           if ($LASTEXITCODE -ne 0) { throw 'Orden inesperado tras guardar desde la interfaz.' }
       - name: Crear paquete portatil

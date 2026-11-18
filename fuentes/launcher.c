@@ -10,7 +10,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <wchar.h>
-#include <string.h>
 #define PATHCAP 32768
 #define COMMANDCAP 65536
 #define RESPONSECAP (8*1024*1024)
@@ -264,6 +263,7 @@ fail:
 }
 static void received(void){
     response[responseSize]=0;char *newline=strchr(response,'\n');if(newline)*newline=0;
+    size_t n=strlen(response);if(n && response[n-1]=='\r')response[n-1]=0;
     char *state=NULL,*tag=strtok_s(response,"\t",&state);
     if(tag && !strcmp(tag,"ERROR")){
         char *h=strtok_s(NULL,"\t",&state);WCHAR *m=h?unhex(h):NULL;
@@ -342,8 +342,6 @@ static void initializeUI(void){
     backgroundBrush=CreateSolidBrush(UI_BACKGROUND);panelBrush=CreateSolidBrush(RGB(255,255,255));headerBrush=CreateSolidBrush(UI_HEADER);
     HWND title=control(L"STATIC",L"Ordenador de elementos CE3X",SS_CENTERIMAGE,36,31,688,33,IDC_TITLE);SendMessageW(title,WM_SETFONT,(WPARAM)titleFont,TRUE);
     HWND version=control(L"STATIC",L"v0.1.0  |  Residencial 2.3 y 3.2",0,37,66,500,18,IDC_VERSION);SendMessageW(version,WM_SETFONT,(WPARAM)smallFont,TRUE);
-    tree=control(WC_TREEVIEWW,L"",WS_TABSTOP|WS_BORDER|TVS_HASLINES|TVS_LINESATROOT|TVS_HASBUTTONS|TVS_SHOWSELALWAYS,20,180,624,404,200);
-    TreeView_SetBkColor(tree,RGB(255,255,255));TreeView_SetTextColor(tree,UI_TEXT);TreeView_SetItemHeight(tree,px(25));
     sourceEdit=control(L"EDIT",L"",ES_READONLY|ES_AUTOHSCROLL|WS_TABSTOP,36,121,550,30,IDC_SOURCE);
     control(L"BUTTON",L"Abrir .cex...",WS_TABSTOP,598,121,126,30,IDC_BROWSE);
     tree=control(WC_TREEVIEWW,L"",WS_TABSTOP|WS_BORDER|TVS_HASLINES|TVS_LINESATROOT|TVS_HASBUTTONS|TVS_SHOWSELALWAYS,20,180,564,370,IDC_TREE);
@@ -425,7 +423,7 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE previous,PWSTR cmd,int show){
             SendMessageW(window,WM_LBUTTONUP,0,0);ok=waitRequest();
         }
         if(ok)ok=savePath(argv[3])&&waitRequest()&&!dirty&&exists(argv[3]);
-        FILE *f=_wfopen(argv[4],L"wb");if(f){fputs(ok?"OK\n":"ERROR\n",f);fclose(f);}DestroyWindow(window);LocalFree(argv);return ok?0:1;
+        FILE *f=_wfopen(argv[4],L"wb");if(f){fputs(ok?"OK\n":"ERROR\n",f);if(!ok){WCHAR status[8192];char text[32768];GetWindowTextW(statusLabel,status,8192);WideCharToMultiByte(CP_UTF8,0,status,-1,text,32768,NULL,NULL);fputs(text,f);}fclose(f);}DestroyWindow(window);LocalFree(argv);return ok?0:1;
     }
     if(argc>=4&&!wcscmp(argv[1],L"--preview")){
         int ok=openPath(argv[2])&&waitRequest();
