@@ -1,0 +1,89 @@
+name: Compilar y comprobar Windows
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Pruebas del motor
+        run: python -B -m unittest discover -s fuentes -v
+      - name: Preparar Zig 0.13.0
+        shell: pwsh
+        run: |
+          $index = Invoke-RestMethod 'https://ziglang.org/download/index.json'
+          $release = $index.'0.13.0'.'x86_64-windows'
+          Invoke-WebRequest $release.tarball -OutFile "$env:RUNNER_TEMP/zig.zip"
+          if ((Get-FileHash "$env:RUNNER_TEMP/zig.zip" -Algorithm SHA256).Hash.ToLowerInvariant() -ne $release.shasum) {
+            throw 'El SHA256 de Zig no coincide con el publicado por el proveedor.'
+          }
+          Expand-Archive "$env:RUNNER_TEMP/zig.zip" "$env:RUNNER_TEMP/zig"
+          $zig = Get-ChildItem "$env:RUNNER_TEMP/zig" -Recurse -Filter zig.exe | Select-Object -First 1
+          $zig.DirectoryName | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+      - name: Compilar interfaz nativa
+        shell: pwsh
+        run: ./fuentes/compilar_windows.ps1
+      - name: Preparar Python portatil
+        shell: pwsh
+        run: |
+          Invoke-WebRequest 'https://www.python.org/ftp/python/3.11.9/python-3.11.9-embed-amd64.zip' -OutFile "$env:RUNNER_TEMP/python.zip"
+          Expand-Archive "$env:RUNNER_TEMP/python.zip" runtime
+          ./runtime/python.exe -I -X utf8 -B -m unittest discover -s fuentes -v
+          if ($LASTEXITCODE -ne 0) { throw 'Fallo con Python portatil.' }
+      - name: Probar ventana, movimientos, deshacer y guardado
+        shell: pwsh
+        run: |
+          python -B scripts/muestra.py _validacion/muestra.cex
+          $process = Start-Process -FilePath "$pwd/Ordenador_CE3X.exe" -ArgumentList @('--self-test', "$pwd/_validacion/muestra.cex", "$pwd/_validacion/ordenada.cex", "$pwd/_validacion/resultado.txt") -PassThru -Wait
+          if ($process.ExitCode -ne 0 -or (Get-Content _validacion/resultado.txt -Raw).Trim() -ne 'OK') { throw 'Fallo en interfaz y motor.' }
+          python -B -c "import sys; sys.path.insert(0,'app'); import ordenador as o; d=o.Document('_validacion/ordenada.cex'); assert d.names[0]=='Fachada sur'; assert d.env[1][1].state['descripcion']=='Norte 2'"
+          if ($LASTEXITCODE -ne 0) { throw 'Orden inesperado tras guardar desde la interfaz.' }
+      - name: Crear paquete portatil
+        run: python -B scripts/empaquetar.py
+      - name: Capturar interfaz nativa
+        shell: pwsh
+        run: |
+          $bitmapPath = "$pwd/_release/vista_previa.bmp"
+          $process = Start-Process -FilePath "$pwd/Ordenador_CE3X.exe" -ArgumentList @('--preview', "$pwd/_validacion/muestra.cex", $bitmapPath) -PassThru -Wait
+          if ($process.ExitCode -ne 0) { throw 'No se pudo capturar la ventana.' }
+          Add-Type -AssemblyName System.Drawing
+          $image = [System.Drawing.Image]::FromFile($bitmapPath)
+          try { $image.Save("$pwd/_release/vista_previa.png", [System.Drawing.Imaging.ImageFormat]::Png) }
+          finally { $image.Dispose() }
+          Remove-Item $bitmapPath
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Ordenador_CE3X_0_1_0
+          path: _release/*
+  release:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: windows
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: Ordenador_CE3X_0_1_0
+          path: _release
+      - name: Publicar primera version experimental
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          if gh release view v0.1.0 >/dev/null 2>&1; then
+            echo 'La version 0.1.0 ya existe; no se modifica.'
+          else
+            gh release create v0.1.0 _release/Ordenador_CE3X_Windows_0_1_0.zip _release/SHA256SUMS.txt _release/vista_previa.png --target "$GITHUB_SHA" --prerelease --title '0.1.0 - Ordenador de elementos CE3X' --notes-file docs/RELEASE_0_1_0.md
+          fi
