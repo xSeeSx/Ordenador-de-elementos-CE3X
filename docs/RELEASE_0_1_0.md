@@ -9,7 +9,7 @@ Descarga **Ordenador_CE3X_Windows_0_1_0.zip**, extrae todo el ZIP y abre **Orden
 - Conserva byte a byte los 14 bloques ajenos a la envolvente y comprueba propiedades y referencias después de guardar.
 - Interfaz nativa con el mismo estilo compacto del conversor.
 
-Pruebas del motor y del ejecutable incluidas en GitHub Actions. Reordenación estructural ensayada localmente con los cuatro ejemplos oficiales residenciales de 2.3 y 3.2.
+19 pruebas del motor y pruebas del ejecutable incluidas en GitHub Actions. Reordenación estructural ensayada localmente con los cuatro ejemplos oficiales residenciales de 2.3 y 3.2.
 
 **Pendiente de comprobar visualmente dentro de CE3X**: orden del árbol y de los informes. No modifica resultados energéticos ni recalcula el certificado. Los huecos y puentes solo se ordenan dentro de su cerramiento. Rechaza estructuras desconocidas y cerramientos con nombres duplicados.
 

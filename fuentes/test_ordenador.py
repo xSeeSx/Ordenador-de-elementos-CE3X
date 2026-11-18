@@ -1,5 +1,5 @@
 from pathlib import Path
-import sys, tempfile, unittest, subprocess, json
+import sys, tempfile, unittest, subprocess, json, pickle
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'app'))
 import ordenador as o
 c=o.c
@@ -75,8 +75,14 @@ class OrderTests(unittest.TestCase):
     def test_shared_references(self):
         self.doc.place('w2',direction='first');out=self.doc.save(self.root/'out.cex');w=c.read_cex(out)[3][1]
         self.assertIs(w[0].state['extra'],w[1].state['extra'])
+    def test_cycles_preserved(self):
+        blocks=fixture();cycle=[];cycle.append(cycle);blocks[3][1][0].state['cycle']=cycle
+        self.path.write_bytes(c.encoded(blocks));d=o.Document(self.path);d.place('e2',direction='first');out=d.save(self.root/'out.cex')
+        saved=c.read_cex(out)[3][1][1].state['cycle'];self.assertIs(saved,saved[0])
     def test_pickle_code_never_executed(self):
-        marker=self.root/'MUST_NOT_EXIST';payload=b"cos\nsystem\n(S'echo bad'\ntR."
+        marker=self.root/'MUST_NOT_EXIST'
+        expression="__import__('pathlib').Path("+repr(str(marker))+").write_text('bad')"
+        payload=b'cbuiltins\neval\n'+pickle.dumps((expression,),protocol=0)[:-1]+b'R.' 
         self.path.write_bytes(c.encoded([c.LegacyString('CE3Xv3.2 Residencial')])+payload+c.encoded([[]]*13))
         with self.assertRaises(c.ConversionError):o.Document(self.path)
         self.assertFalse(marker.exists())

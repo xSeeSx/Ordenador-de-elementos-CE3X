@@ -8,6 +8,7 @@
 #include <shellapi.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <wchar.h>
 #include <string.h>
 #define PATHCAP 32768
@@ -34,7 +35,7 @@
 static HWND window,sourceEdit,tree,statusLabel;
 static HFONT font,titleFont,strongFont,smallFont;
 static HBRUSH backgroundBrush,panelBrush,headerBrush;
-static int uiDpi=96,busy,operation,hasDocument,dirty,canUndo,canRedo,hasAttempt;
+static int uiDpi=96,busy,operation,hasDocument,dirty,canUndo,canRedo,hasAttempt,lastResult;
 static WCHAR baseDir[PATHCAP],sourcePath[PATHCAP],pendingPath[PATHCAP];
 static HANDLE engineInput,engineOutput;
 static PROCESS_INFORMATION engine;
@@ -139,7 +140,7 @@ static int request(const WCHAR *json, int kind) {
     BOOL ok = WriteFile(engineInput, bytes, length, &sent, NULL);
     HeapFree(GetProcessHeap(), 0, bytes);
     if (!ok || sent != (DWORD)length) { closeEngine(); report(L"No se pudo comunicar con el motor."); return 0; }
-    responseSize = 0; operation = kind; requestStarted=GetTickCount64(); setBusy(1);
+    lastResult=0; responseSize = 0; operation = kind; requestStarted=GetTickCount64(); setBusy(1);
     if (kind == 1) report(L"Abriendo archivo...");
     else if (kind == 2) report(L"Comprobando y guardando la copia...");
     if (window) SetTimer(window, 1, 100, NULL);
@@ -272,7 +273,7 @@ static void received(void){
     if(!tag||strcmp(tag,"OK")||!sel||!flags||!message||!rows){report(L"Respuesta del motor no válida.");setBusy(0);return;}
     sscanf(flags,"%d,%d,%d",&dirty,&canUndo,&canRedo);
     if(!renderTree(rows,sel)){report(L"No se pudo mostrar el árbol.");setBusy(0);return;}
-    hasDocument=1;
+    hasDocument=1;lastResult=1;
     if(operation==1){wcscpy(sourcePath,pendingPath);SetWindowTextW(sourceEdit,sourcePath);}
     if(strcmp(message,"-")){WCHAR *m=unhex(message);report(m?m:L"Operación completada.");free(m);}
     else report(dirty?L"Cambios pendientes de guardar.":L"Sin cambios pendientes.");
@@ -402,7 +403,7 @@ static LRESULT CALLBACK windowProc(HWND hwnd,UINT msg,WPARAM wp,LPARAM lp){
 static int waitRequest(void){
     ULONGLONG started=GetTickCount64();MSG msg;
     while(busy&&GetTickCount64()-started<30000){while(PeekMessageW(&msg,NULL,0,0,PM_REMOVE)){TranslateMessage(&msg);DispatchMessageW(&msg);}pollEngine();Sleep(10);}
-    return !busy&&hasDocument;
+    return !busy&&hasDocument&&lastResult;
 }
 int WINAPI wWinMain(HINSTANCE instance,HINSTANCE previous,PWSTR cmd,int show){
     (void)previous;(void)cmd;SetProcessDPIAware();HDC dc=GetDC(NULL);uiDpi=GetDeviceCaps(dc,LOGPIXELSX);ReleaseDC(NULL,dc);
@@ -415,10 +416,14 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE previous,PWSTR cmd,int show){
     int argc;WCHAR **argv=CommandLineToArgvW(GetCommandLineW(),&argc);
     if(argc>=5&&!wcscmp(argv[1],L"--self-test")){
         int ok=openPath(argv[2])&&waitRequest();
-        if(ok)ok=moveId("e2","first",NULL)&&waitRequest()&&dirty;
-        if(ok)ok=request(L"{\"command\":\"undo\"}",3)&&waitRequest()&&!dirty;
-        if(ok)ok=request(L"{\"command\":\"redo\"}",3)&&waitRequest()&&dirty;
-        if(ok)ok=moveId("w2","first",NULL)&&waitRequest();
+        if(ok){TreeView_SelectItem(tree,findItem("e2"));SendMessageW(window,WM_COMMAND,IDC_FIRST,0);ok=waitRequest()&&dirty;}
+        if(ok){SendMessageW(window,WM_COMMAND,IDC_UNDO,0);ok=waitRequest()&&!dirty;}
+        if(ok){SendMessageW(window,WM_COMMAND,IDC_REDO,0);ok=waitRequest()&&dirty;}
+        if(ok){
+            NMTREEVIEWW drag={0};drag.hdr.hwndFrom=tree;drag.hdr.code=TVN_BEGINDRAGW;drag.itemNew.hItem=findItem("w2");
+            SendMessageW(window,WM_NOTIFY,200,(LPARAM)&drag);TreeView_SelectDropTarget(tree,findItem("w0"));
+            SendMessageW(window,WM_LBUTTONUP,0,0);ok=waitRequest();
+        }
         if(ok)ok=savePath(argv[3])&&waitRequest()&&!dirty&&exists(argv[3]);
         FILE *f=_wfopen(argv[4],L"wb");if(f){fputs(ok?"OK\n":"ERROR\n",f);fclose(f);}DestroyWindow(window);LocalFree(argv);return ok?0:1;
     }

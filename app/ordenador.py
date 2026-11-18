@@ -37,7 +37,9 @@ def raw_blocks(data):
 
 class Document:
     def __init__(self,path):
-        self.path=Path(path).resolve();self.raw=self.path.read_bytes()
+        self.path=Path(path).resolve()
+        c.require(self.path.stat().st_size<=c.MAX_BYTES,'E_SIZE','El archivo supera 64 MiB')
+        self.raw=self.path.read_bytes()
         c.require(len(self.raw)<=c.MAX_BYTES,'E_SIZE','El archivo supera 64 MiB')
         self.hash=hashlib.sha256(self.raw).hexdigest()
         self.blocks=c.read_cex(self.path);self.chunks=raw_blocks(self.raw)
