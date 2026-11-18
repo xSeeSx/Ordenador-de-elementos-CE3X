@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+runtime/
+_release/
+_validacion/
+*.exe
+*.cex
+*.bmp
