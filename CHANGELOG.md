@@ -1,5 +1,11 @@
 # Notas de versión
 
+## 0.3.1 - 2026-11-26
+
+- Icono propio integrado en el ejecutable y la ventana de Windows.
+- Enlaces al conversor CE3X en la documentación.
+- Comprobación automática del recurso de icono en Windows.
+
 ## 0.3.0 - 2026-11-26
 
 - Lista de filas compactas con jerarquía, agarres y grupos plegables.

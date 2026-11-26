@@ -1,4 +1,4 @@
-# Ordenador de elementos CE3X
+# <img src="assets/icono.svg" width="48" height="48" alt=""> Ordenador de elementos CE3X
 
 Herramienta para reordenar cerramientos, huecos y puentes térmicos en archivos CE3X, conservando sus datos y asociaciones. Incluye la avanzada tecnología de "subir y bajar elementos", a la espera de que Efinovatic la descubra y la Junta la homologue.
 
@@ -32,9 +32,15 @@ Los errores explican qué acción falló y, cuando se conoce, qué elemento est�
 
 Mantiene la versión del archivo, todas las propiedades de los elementos y sus asociaciones. Solo cambia el orden de las listas de la envolvente. Los otros 14 bloques del CEX se conservan byte a byte, incluidas instalaciones, mejoras, sombras e informes. El original no se sobrescribe. No recalcula el certificado ni genera logs automáticamente.
 
-**Versión 0.3.0, todavía experimental.** Se han ensayado la lectura, reordenación y conservación estructural con muestras sintéticas y ejemplos oficiales residenciales de ambas versiones. Queda pendiente comprobar visualmente los resultados dentro de CE3X y su informe. El programa rechaza estructuras desconocidas y nombres de cerramientos duplicados, porque harían ambiguas las asociaciones.
+**Versión 0.3.1, todavía experimental.** Se han ensayado la lectura, reordenación y conservación estructural con muestras sintéticas y ejemplos oficiales residenciales de ambas versiones. Queda pendiente comprobar visualmente los resultados dentro de CE3X y su informe. El programa rechaza estructuras desconocidas y nombres de cerramientos duplicados, porque harían ambiguas las asociaciones.
 
 Si encuentras un fallo, [abre una incidencia](https://github.com/xSeeSx/Ordenador-de-elementos-CE3X/issues). Describe la versión de CE3X, el movimiento realizado y el resultado. Evita adjuntar proyectos con datos personales sin revisarlos.
+
+## Más programas que te pueden interesar
+
+**[Conversor CE3X 3.2 a CE3X 2.3](https://github.com/xSeeSx/Conversor-CE3X-3.2-a-CE3X-2.3)** - Convierte certificados residenciales 3.2 para abrirlos en CE3X 2.3, conservando los datos compatibles y avisando de las adaptaciones necesarias.
+
+[Descargar conversor CE3X](https://github.com/xSeeSx/Conversor-CE3X-3.2-a-CE3X-2.3/releases/latest)
 
 ## Desarrollo
 
@@ -42,6 +48,6 @@ Motor en Python estándar e interfaz nativa de Windows en C, sin dependencia del
 
 Pruebas: `python -B -m unittest discover -s fuentes -v`.
 
-Para compilar en Windows: Zig 0.13.0 en el PATH y `./fuentes/compilar_windows.ps1`. Coloca Python 3.11.9 embebido de 64 bits en `runtime/`. El flujo de GitHub Actions compila, prueba el motor con ambos Python, comprueba la comunicación con el EXE, captura la ventana y genera el ZIP mediante `python -B scripts/empaquetar.py`.
+Para compilar en Windows: Python 3.11 y Zig 0.13.0 en el PATH y `./fuentes/compilar_windows.ps1`. Coloca Python 3.11.9 embebido de 64 bits en `runtime/`. El flujo de GitHub Actions compila, prueba el motor con ambos Python, comprueba la comunicación con el EXE, captura la ventana y genera el ZIP mediante `python -B scripts/empaquetar.py`.
 
 Licencia del runtime de Python incluida en `runtime/LICENSE.txt` del ZIP.

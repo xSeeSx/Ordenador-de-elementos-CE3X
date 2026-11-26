@@ -117,7 +117,7 @@ static void applyUpdateReply(const char *reply, int manual) {
         swprintf(updateVersion, ARRAYSIZE(updateVersion), L"%u.%u.%u", major, minor, patch);
         WCHAR label[96]; swprintf(label, ARRAYSIZE(label), L"Descargar v%ls", updateVersion);
         SetWindowTextW(button, label);
-        SetWindowTextW(GetDlgItem(window, IDC_VERSION), L"v0.3.0  |  Nueva versión disponible");
+        SetWindowTextW(GetDlgItem(window, IDC_VERSION), L"v0.3.1  |  Nueva versión disponible");
         if (manual && MessageBoxW(window,
                 L"Hay una versión nueva. ¿Quieres abrir su página de descarga?\r\n\r\nExtrae el ZIP nuevo en otra carpeta.",
                 L"Actualización disponible", MB_YESNO | MB_ICONINFORMATION | MB_DEFBUTTON2) == IDYES)
@@ -454,7 +454,7 @@ static void initializeUI(void){
     font=makeFont(15,FW_NORMAL);titleFont=makeFont(25,FW_SEMIBOLD);strongFont=makeFont(15,FW_SEMIBOLD);smallFont=makeFont(13,FW_NORMAL);
     backgroundBrush=CreateSolidBrush(UI_BACKGROUND);panelBrush=CreateSolidBrush(RGB(255,255,255));headerBrush=CreateSolidBrush(UI_HEADER);
     HWND title=control(L"STATIC",L"Ordenador de elementos CE3X",SS_CENTERIMAGE,36,31,688,33,IDC_TITLE);SendMessageW(title,WM_SETFONT,(WPARAM)titleFont,TRUE);
-    HWND version=control(L"STATIC",L"v0.3.0  |  Residencial 2.3 y 3.2",0,37,66,500,18,IDC_VERSION);SendMessageW(version,WM_SETFONT,(WPARAM)smallFont,TRUE);
+    HWND version=control(L"STATIC",L"v0.3.1  |  Residencial 2.3 y 3.2",0,37,66,500,18,IDC_VERSION);SendMessageW(version,WM_SETFONT,(WPARAM)smallFont,TRUE);
     control(L"BUTTON",L"Buscar actualizaciones",WS_TABSTOP,570,53,214,28,IDC_UPDATES);
     sourceEdit=control(L"EDIT",L"",ES_READONLY|ES_AUTOHSCROLL|WS_TABSTOP,36,121,550,30,IDC_SOURCE);
     control(L"BUTTON",L"Abrir .cex...",WS_TABSTOP,598,121,126,30,IDC_BROWSE);
@@ -513,14 +513,18 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE previous,PWSTR cmd,int show){
     (void)previous;(void)cmd;SetProcessDPIAware();HDC dc=GetDC(NULL);uiDpi=GetDeviceCaps(dc,LOGPIXELSX);ReleaseDC(NULL,dc);
     GetModuleFileNameW(NULL,baseDir,PATHCAP);WCHAR *slash=wcsrchr(baseDir,L'\\');if(slash)*slash=0;
     INITCOMMONCONTROLSEX common={sizeof(common),ICC_TREEVIEW_CLASSES};InitCommonControlsEx(&common);
-    WNDCLASSW wc={0};wc.lpfnWndProc=windowProc;wc.hInstance=instance;wc.lpszClassName=L"CE3XOrderWindow";wc.hCursor=LoadCursor(NULL,IDC_ARROW);wc.hIcon=LoadIcon(NULL,IDI_APPLICATION);RegisterClassW(&wc);
+    WNDCLASSW wc={0};wc.lpfnWndProc=windowProc;wc.hInstance=instance;wc.lpszClassName=L"CE3XOrderWindow";wc.hCursor=LoadCursor(NULL,IDC_ARROW);wc.hIcon=LoadIconW(instance,MAKEINTRESOURCEW(101));
+    if(!wc.hIcon)wc.hIcon=LoadIcon(NULL,IDI_APPLICATION);RegisterClassW(&wc);
     RECT r={0,0,px(820),px(650)};AdjustWindowRect(&r,WS_OVERLAPPEDWINDOW,FALSE);
     window=CreateWindowExW(0,wc.lpszClassName,L"Ordenador de elementos CE3X",WS_OVERLAPPEDWINDOW,CW_USEDEFAULT,CW_USEDEFAULT,r.right-r.left,r.bottom-r.top,NULL,NULL,instance,NULL);
-    if(!window)return 1;ShowWindow(window,show);UpdateWindow(window);
+    if(!window)return 1;
+    HICON smallIcon=(HICON)LoadImageW(instance,MAKEINTRESOURCEW(101),IMAGE_ICON,GetSystemMetrics(SM_CXSMICON),GetSystemMetrics(SM_CYSMICON),LR_SHARED);
+    if(smallIcon)SendMessageW(window,WM_SETICON,ICON_SMALL,(LPARAM)smallIcon);
+    ShowWindow(window,show);UpdateWindow(window);
     int argc;WCHAR **argv=CommandLineToArgvW(GetCommandLineW(),&argc);
     if(argc>=5&&!wcscmp(argv[1],L"--self-test")){
         testMode=1;
-        int ok=openPath(argv[2])&&waitRequest();
+        int ok=FindResourceW(instance,MAKEINTRESOURCEW(101),RT_GROUP_ICON)!=NULL&&smallIcon!=NULL&&openPath(argv[2])&&waitRequest();
         if(ok){selectRow(idIndex("e2"));SendMessageW(window,WM_COMMAND,IDC_FIRST,0);ok=waitRequest()&&dirty;}
         if(ok){SendMessageW(window,WM_COMMAND,IDC_UNDO,0);ok=waitRequest()&&!dirty;}
         if(ok){SendMessageW(window,WM_COMMAND,IDC_REDO,0);ok=waitRequest()&&dirty;}
@@ -540,7 +544,7 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE previous,PWSTR cmd,int show){
         }
         if(ok){
             int oldDirty=dirty,oldUndo=canUndo,oldRedo=canRedo; WCHAR label[96];
-            applyUpdateReply("UNAVAILABLE\t",0);applyUpdateReply("CURRENT\t0.3.0",0);
+            applyUpdateReply("UNAVAILABLE\t",0);applyUpdateReply("CURRENT\t0.3.1",0);
             ok=!updateVersion[0];applyUpdateReply("UPDATE\t99.1.2\n",0);
             GetWindowTextW(GetDlgItem(window,IDC_UPDATES),label,ARRAYSIZE(label));
             ok=ok&&wcscmp(label,L"Descargar v99.1.2")==0&&dirty==oldDirty&&canUndo==oldUndo&&canRedo==oldRedo;

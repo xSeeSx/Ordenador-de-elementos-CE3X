@@ -2,15 +2,15 @@
 from pathlib import Path
 import hashlib,json,zipfile
 root=Path(__file__).resolve().parents[1]
-files={name:(root/name).read_bytes() for name in ['Ordenador_CE3X.exe','app/cex_codec.py','app/ordenador.py','README.md','CHANGELOG.md']}
+files={name:(root/name).read_bytes() for name in ['Ordenador_CE3X.exe','app/cex_codec.py','app/ordenador.py','README.md','CHANGELOG.md','assets/icono.svg']}
 for name in ['python.exe','python311.dll','python311.zip','python311._pth','LICENSE.txt']:
     if not (root/'runtime'/name).is_file():raise FileNotFoundError(name)
 for path in sorted((root/'runtime').rglob('*')):
     if path.is_file() and '__pycache__' not in path.parts and path.suffix!='.pyc':files[path.relative_to(root).as_posix()]=path.read_bytes()
-files['LEEME.txt']=('ORDENADOR DE ELEMENTOS CE3X 0.3.0\n\nWindows 10/11 de 64 bits. Python incluido.\nExtrae todo el ZIP y abre Ordenador_CE3X.exe.\nAbre tu .cex residencial 2.3 o 3.2, selecciona un elemento y utiliza\nSubir, Bajar, Al inicio, Al final o arrastra las filas a su nueva posición.\nLos huecos y puentes solo se ordenan dentro de su cerramiento.\nDeshacer: Ctrl+Z. Rehacer: Ctrl+Y. Guardar copia: Ctrl+S.\nLa salida propuesta es nombre_ORDENADO.cex junto al original.\nEl original se conserva y no cambia la version del archivo.\nNo se generan logs automaticamente. No cambian propiedades ni calculos.\nHerramienta experimental, pendiente de comprobacion visual en CE3X.\nComprueba el orden del arbol y del informe al abrir el resultado.\nBuscar actualizaciones consulta GitHub sin enviar certificados.\nConserva app/ y runtime/ junto al ejecutable.\nLicencia de Python: runtime/LICENSE.txt\n').encode('utf-8')
+files['LEEME.txt']=('ORDENADOR DE ELEMENTOS CE3X 0.3.1\n\nWindows 10/11 de 64 bits. Python incluido.\nExtrae todo el ZIP y abre Ordenador_CE3X.exe.\nAbre tu .cex residencial 2.3 o 3.2, selecciona un elemento y utiliza\nSubir, Bajar, Al inicio, Al final o arrastra las filas a su nueva posición.\nLos huecos y puentes solo se ordenan dentro de su cerramiento.\nDeshacer: Ctrl+Z. Rehacer: Ctrl+Y. Guardar copia: Ctrl+S.\nLa salida propuesta es nombre_ORDENADO.cex junto al original.\nEl original se conserva y no cambia la version del archivo.\nNo se generan logs automaticamente. No cambian propiedades ni calculos.\nHerramienta experimental, pendiente de comprobacion visual en CE3X.\nComprueba el orden del arbol y del informe al abrir el resultado.\nBuscar actualizaciones consulta GitHub sin enviar certificados.\nConserva app/ y runtime/ junto al ejecutable.\nLicencia de Python: runtime/LICENSE.txt\n').encode('utf-8')
 hashes={name:hashlib.sha256(data).hexdigest() for name,data in sorted(files.items())}
 files['SHA256.json']=(json.dumps(hashes,indent=2)+'\n').encode()
-out=root/'_release';out.mkdir(exist_ok=True);dest=out/'Ordenador_CE3X_Windows_0_3_0.zip';prefix='Ordenador_CE3X_0_3_0/'
+out=root/'_release';out.mkdir(exist_ok=True);dest=out/'Ordenador_CE3X_Windows_0_3_1.zip';prefix='Ordenador_CE3X_0_3_1/'
 with zipfile.ZipFile(dest,'w',zipfile.ZIP_DEFLATED,compresslevel=9) as z:
     for name,data in sorted(files.items()):z.writestr(prefix+name,data)
 with zipfile.ZipFile(dest) as z:
