@@ -1,5 +1,13 @@
 # Notas de versión
 
+## 0.2.0 - 2026-11-26
+
+- Consulta automática y manual de nuevas versiones, sin bloquear la interfaz.
+- Aviso en cabecera y acceso a la descarga oficial de Windows.
+- Mensajes de error en lenguaje claro, con nombres de elementos en movimientos incompatibles y cerramientos duplicados.
+- Pruebas de actualizaciones sin red y comprobación del estado de la interfaz.
+- No se modifica el algoritmo de reordenación. Sigue pendiente la comprobación visual en CE3X.
+
 ## 0.1.0 - 2026-11-18
 
 Primera versión experimental.

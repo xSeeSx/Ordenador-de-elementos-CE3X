@@ -26,6 +26,7 @@
 #define IDC_REDO 109
 #define IDC_SAVE 110
 #define IDC_STATUS 113
+#define IDC_UPDATES 121
 #define UI_BACKGROUND RGB(245,246,249)
 #define UI_HEADER RGB(234,237,247)
 #define UI_BORDER RGB(204,210,223)
@@ -37,6 +38,13 @@ static HBRUSH backgroundBrush,panelBrush,headerBrush;
 static int uiDpi=96,busy,operation,hasDocument,dirty,canUndo,canRedo,hasAttempt,lastResult;
 static WCHAR baseDir[PATHCAP],sourcePath[PATHCAP],pendingPath[PATHCAP];
 static HANDLE engineInput,engineOutput;
+static PROCESS_INFORMATION updateProcess;
+static HANDLE updateOutput;
+static ULONGLONG updateStarted;
+static DWORD updateSize;
+static char updateReply[1024];
+static int updateManual, updateReady, testMode;
+static WCHAR updateVersion[32];
 static PROCESS_INFORMATION engine;
 static char response[RESPONSECAP];
 static DWORD responseSize;
@@ -74,6 +82,95 @@ static int addArg(WCHAR *command, size_t capacity, const WCHAR *value) {
         command[length++] = *value++;
     }
     command[length++] = L'"'; command[length] = 0; return 1;
+}
+static void closeUpdateCheck(void) {
+    if (updateOutput) { CloseHandle(updateOutput); updateOutput = NULL; }
+    if (updateProcess.hProcess) {
+        DWORD code;
+        if (GetExitCodeProcess(updateProcess.hProcess, &code) && code == STILL_ACTIVE)
+            TerminateProcess(updateProcess.hProcess, 0);
+        CloseHandle(updateProcess.hProcess); CloseHandle(updateProcess.hThread);
+        ZeroMemory(&updateProcess, sizeof(updateProcess));
+    }
+}
+static void openUpdateRelease(void) {
+    WCHAR url[256];
+    if (!updateVersion[0]) return;
+    swprintf(url, ARRAYSIZE(url), L"https://github.com/xSeeSx/Ordenador-de-elementos-CE3X/releases/tag/v%ls", updateVersion);
+    ShellExecuteW(window, L"open", url, NULL, NULL, SW_SHOWNORMAL);
+}
+static void applyUpdateReply(const char *reply, int manual) {
+    HWND button = GetDlgItem(window, IDC_UPDATES);
+    SetWindowTextW(button, L"Buscar actualizaciones"); EnableWindow(button, TRUE);
+    unsigned major, minor, patch; int used = 0;
+    if (sscanf(reply, "UPDATE\t%u.%u.%u%n", &major, &minor, &patch, &used) == 3
+            && used > 0 && (reply[used] == 0 || reply[used] == '\r' || reply[used] == '\n')
+            && major < 100000 && minor < 100000 && patch < 100000) {
+        swprintf(updateVersion, ARRAYSIZE(updateVersion), L"%u.%u.%u", major, minor, patch);
+        WCHAR label[96]; swprintf(label, ARRAYSIZE(label), L"Descargar v%ls", updateVersion);
+        SetWindowTextW(button, label);
+        SetWindowTextW(GetDlgItem(window, IDC_VERSION), L"v0.2.0  |  Nueva versión disponible");
+        if (manual && MessageBoxW(window,
+                L"Hay una versión nueva. ¿Quieres abrir su página de descarga?\r\n\r\nExtrae el ZIP nuevo en otra carpeta.",
+                L"Actualización disponible", MB_YESNO | MB_ICONINFORMATION | MB_DEFBUTTON2) == IDYES)
+            openUpdateRelease();
+    } else if (manual) {
+        MessageBoxW(window, strncmp(reply, "CURRENT\t", 8) == 0
+            ? L"Ya tienes la última versión publicada."
+            : L"No se pudo consultar GitHub. Puedes seguir usando el programa y volver a intentarlo más tarde.",
+            L"Actualizaciones", MB_OK | MB_ICONINFORMATION);
+    }
+}
+static void startUpdateCheck(int manual) {
+    if (updateProcess.hProcess || updateReady) { if (manual) updateManual = 1; return; }
+    if (updateVersion[0]) { openUpdateRelease(); return; }
+    WCHAR python[PATHCAP], script[PATHCAP], command[32768] = L"";
+    swprintf(python, PATHCAP, L"%ls\\runtime\\python.exe", baseDir);
+    swprintf(script, PATHCAP, L"%ls\\app\\ordenador.py", baseDir);
+    const WCHAR *arguments[] = {python, L"-I", L"-X", L"utf8", L"-B", script, L"check-updates"};
+    for (int i = 0; i < 7; i++) if (!addArg(command, ARRAYSIZE(command), arguments[i])) return;
+    SECURITY_ATTRIBUTES security = {sizeof(security), NULL, TRUE};
+    HANDLE childOutput = NULL, childInput = NULL;
+    if (!CreatePipe(&updateOutput, &childOutput, &security, 0) ||
+        !SetHandleInformation(updateOutput, HANDLE_FLAG_INHERIT, 0)) goto fail;
+    childInput = CreateFileW(L"NUL", GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, &security, OPEN_EXISTING, 0, NULL);
+    if (childInput == INVALID_HANDLE_VALUE) { childInput = NULL; goto fail; }
+    STARTUPINFOW startup = {0}; startup.cb = sizeof(startup);
+    startup.dwFlags = STARTF_USESTDHANDLES | STARTF_USESHOWWINDOW; startup.wShowWindow = SW_HIDE;
+    startup.hStdInput = childInput; startup.hStdOutput = childOutput; startup.hStdError = childOutput;
+    if (!CreateProcessW(python, command+1, NULL, NULL, TRUE, CREATE_NO_WINDOW, NULL, baseDir, &startup, &updateProcess)) goto fail;
+    CloseHandle(childOutput); CloseHandle(childInput);
+    updateSize = 0; updateReply[0] = 0; updateReady = 0; updateManual = manual; updateStarted = GetTickCount64();
+    SetWindowTextW(GetDlgItem(window, IDC_UPDATES), L"Buscando actualizaciones...");
+    SetTimer(window, 2, 100, NULL); return;
+fail:
+    if (childOutput) CloseHandle(childOutput);
+    if (childInput) CloseHandle(childInput);
+    closeUpdateCheck(); applyUpdateReply("UNAVAILABLE\t", manual);
+}
+static void pollUpdateCheck(void) {
+    if (updateProcess.hProcess) {
+        DWORD available = 0, got = 0, code = STILL_ACTIVE;
+        if (PeekNamedPipe(updateOutput, NULL, 0, NULL, &available, NULL) && available) {
+            DWORD space = sizeof(updateReply)-updateSize-1;
+            if (space && ReadFile(updateOutput, updateReply+updateSize, min(available, space), &got, NULL)) updateSize += got;
+            updateReply[updateSize] = 0;
+        }
+        if (GetTickCount64()-updateStarted > 10000) {
+            strcpy(updateReply, "UNAVAILABLE\t"); closeUpdateCheck(); updateReady = 1;
+        } else if (GetExitCodeProcess(updateProcess.hProcess, &code) && code != STILL_ACTIVE) {
+            // Una última lectura recoge la respuesta escrita justo antes de salir.
+            if (PeekNamedPipe(updateOutput, NULL, 0, NULL, &available, NULL) && available) {
+                DWORD space = sizeof(updateReply)-updateSize-1;
+                if (space && ReadFile(updateOutput, updateReply+updateSize, min(available, space), &got, NULL)) updateSize += got;
+                updateReply[updateSize] = 0;
+            }
+            closeUpdateCheck(); updateReady = 1;
+        }
+    }
+    if (updateReady && (!updateManual || (!busy && IsWindowEnabled(window)))) {
+        updateReady = 0; KillTimer(window, 2); applyUpdateReply(updateReply, updateManual);
+    }
 }
 static void closeEngine(void) {
     if (engineInput) { CloseHandle(engineInput); engineInput = NULL; }
@@ -267,7 +364,9 @@ static void received(void){
     char *state=NULL,*tag=strtok_s(response,"\t",&state);
     if(tag && !strcmp(tag,"ERROR")){
         char *h=strtok_s(NULL,"\t",&state);WCHAR *m=h?unhex(h):NULL;
-        report(m?m:L"Error del motor.");free(m);setBusy(0);return;
+        report(m?m:L"No se pudo completar la operación.");setBusy(0);
+        if(!testMode)MessageBoxW(window,m?m:L"No se pudo completar la operación.",L"Ordenador CE3X",MB_OK|MB_ICONWARNING);
+        free(m);return;
     }
     char *sel=strtok_s(NULL,"\t",&state),*flags=strtok_s(NULL,"\t",&state),*message=strtok_s(NULL,"\t",&state),*rows=strtok_s(NULL,"\t",&state);
     if(!tag||strcmp(tag,"OK")||!sel||!flags||!message||!rows){report(L"Respuesta del motor no válida.");setBusy(0);return;}
@@ -330,6 +429,8 @@ static void moveSelected(const char *direction){moveId(itemId(TreeView_GetSelect
 static void layoutWindow(void){
     if(!tree)return;RECT r;GetClientRect(window,&r);int w=MulDiv(r.right,96,uiDpi),h=MulDiv(r.bottom,96,uiDpi);
     MoveWindow(GetDlgItem(window,IDC_TITLE),px(36),px(31),px(w-72),px(33),TRUE);
+    MoveWindow(GetDlgItem(window,IDC_VERSION),px(37),px(66),px(w-300),px(18),TRUE);
+    MoveWindow(GetDlgItem(window,IDC_UPDATES),px(w-250),px(53),px(214),px(28),TRUE);
     MoveWindow(sourceEdit,px(36),px(121),px(w-218),px(30),TRUE);MoveWindow(GetDlgItem(window,IDC_BROWSE),px(w-170),px(121),px(134),px(30),TRUE);
     MoveWindow(tree,px(20),px(180),px(w-196),px(h-246),TRUE);
     int ids[]={IDC_UP,IDC_DOWN,IDC_FIRST,IDC_LAST,IDC_UNDO,IDC_REDO};
@@ -341,7 +442,8 @@ static void initializeUI(void){
     font=makeFont(15,FW_NORMAL);titleFont=makeFont(25,FW_SEMIBOLD);strongFont=makeFont(15,FW_SEMIBOLD);smallFont=makeFont(13,FW_NORMAL);
     backgroundBrush=CreateSolidBrush(UI_BACKGROUND);panelBrush=CreateSolidBrush(RGB(255,255,255));headerBrush=CreateSolidBrush(UI_HEADER);
     HWND title=control(L"STATIC",L"Ordenador de elementos CE3X",SS_CENTERIMAGE,36,31,688,33,IDC_TITLE);SendMessageW(title,WM_SETFONT,(WPARAM)titleFont,TRUE);
-    HWND version=control(L"STATIC",L"v0.1.0  |  Residencial 2.3 y 3.2",0,37,66,500,18,IDC_VERSION);SendMessageW(version,WM_SETFONT,(WPARAM)smallFont,TRUE);
+    HWND version=control(L"STATIC",L"v0.2.0  |  Residencial 2.3 y 3.2",0,37,66,500,18,IDC_VERSION);SendMessageW(version,WM_SETFONT,(WPARAM)smallFont,TRUE);
+    control(L"BUTTON",L"Buscar actualizaciones",WS_TABSTOP,570,53,214,28,IDC_UPDATES);
     sourceEdit=control(L"EDIT",L"",ES_READONLY|ES_AUTOHSCROLL|WS_TABSTOP,36,121,550,30,IDC_SOURCE);
     control(L"BUTTON",L"Abrir .cex...",WS_TABSTOP,598,121,126,30,IDC_BROWSE);
     tree=control(WC_TREEVIEWW,L"",WS_TABSTOP|WS_BORDER|TVS_HASLINES|TVS_LINESATROOT|TVS_HASBUTTONS|TVS_SHOWSELALWAYS,20,180,564,370,IDC_TREE);
@@ -359,6 +461,7 @@ static LRESULT CALLBACK windowProc(HWND hwnd,UINT msg,WPARAM wp,LPARAM lp){
     case WM_SIZE:layoutWindow();return 0;
     case WM_GETMINMAXINFO:{MINMAXINFO *m=(MINMAXINFO*)lp;m->ptMinTrackSize.x=px(700);m->ptMinTrackSize.y=px(590);return 0;}
     case WM_COMMAND:
+        if(LOWORD(wp)==IDC_UPDATES){startUpdateCheck(1);return 0;}
         if(busy)return 0;
         switch(LOWORD(wp)){
         case IDC_BROWSE:chooseSource();break;
@@ -387,14 +490,14 @@ static LRESULT CALLBACK windowProc(HWND hwnd,UINT msg,WPARAM wp,LPARAM lp){
     case WM_CAPTURECHANGED:if(dragging){dragging=0;TreeView_SelectDropTarget(tree,NULL);}return 0;
     case WM_KEYDOWN:if(wp==VK_ESCAPE)cancelDrag();return 0;
     case WM_DROPFILES:{HDROP d=(HDROP)wp;WCHAR p[PATHCAP];if(!busy&&DragQueryFileW(d,0,p,PATHCAP)&&discardChanges())openPath(p);DragFinish(d);return 0;}
-    case WM_TIMER:pollEngine();return 0;
+    case WM_TIMER:if(wp==2)pollUpdateCheck();else pollEngine();return 0;
     case WM_PAINT:{PAINTSTRUCT p;HDC dc=BeginPaint(hwnd,&p);paintWindow(dc);EndPaint(hwnd,&p);return 0;}
     case WM_PRINTCLIENT:paintWindow((HDC)wp);return 0;
     case WM_DRAWITEM:drawButton((const DRAWITEMSTRUCT*)lp);return TRUE;
     case WM_CTLCOLORSTATIC:{int id=GetDlgCtrlID((HWND)lp);HDC dc=(HDC)wp;int head=id==IDC_TITLE||id==IDC_VERSION;
         SetTextColor(dc,id==IDC_STATUS||id==IDC_VERSION?RGB(91,100,118):UI_TEXT);SetBkColor(dc,head?UI_HEADER:UI_BACKGROUND);return (LRESULT)(head?headerBrush:backgroundBrush);}
     case WM_CLOSE:if(busy){report(L"Espera a que termine la operación.");return 0;}if(discardChanges())DestroyWindow(hwnd);return 0;
-    case WM_DESTROY:closeEngine();free(nodes);DeleteObject(font);DeleteObject(titleFont);DeleteObject(strongFont);DeleteObject(smallFont);DeleteObject(backgroundBrush);DeleteObject(panelBrush);DeleteObject(headerBrush);PostQuitMessage(0);return 0;
+    case WM_DESTROY:closeUpdateCheck();closeEngine();free(nodes);DeleteObject(font);DeleteObject(titleFont);DeleteObject(strongFont);DeleteObject(smallFont);DeleteObject(backgroundBrush);DeleteObject(panelBrush);DeleteObject(headerBrush);PostQuitMessage(0);return 0;
     }
     return DefWindowProcW(hwnd,msg,wp,lp);
 }
@@ -413,6 +516,7 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE previous,PWSTR cmd,int show){
     if(!window)return 1;ShowWindow(window,show);UpdateWindow(window);
     int argc;WCHAR **argv=CommandLineToArgvW(GetCommandLineW(),&argc);
     if(argc>=5&&!wcscmp(argv[1],L"--self-test")){
+        testMode=1;
         int ok=openPath(argv[2])&&waitRequest();
         if(ok){TreeView_SelectItem(tree,findItem("e2"));SendMessageW(window,WM_COMMAND,IDC_FIRST,0);ok=waitRequest()&&dirty;}
         if(ok){SendMessageW(window,WM_COMMAND,IDC_UNDO,0);ok=waitRequest()&&!dirty;}
@@ -422,15 +526,23 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE previous,PWSTR cmd,int show){
             SendMessageW(window,WM_NOTIFY,200,(LPARAM)&drag);TreeView_SelectDropTarget(tree,findItem("w0"));
             SendMessageW(window,WM_LBUTTONUP,0,0);ok=waitRequest();
         }
+        if(ok){
+            int oldDirty=dirty,oldUndo=canUndo,oldRedo=canRedo; WCHAR label[96];
+            applyUpdateReply("UNAVAILABLE\t",0);applyUpdateReply("CURRENT\t0.2.0",0);
+            ok=!updateVersion[0];applyUpdateReply("UPDATE\t99.1.2\n",0);
+            GetWindowTextW(GetDlgItem(window,IDC_UPDATES),label,ARRAYSIZE(label));
+            ok=ok&&wcscmp(label,L"Descargar v99.1.2")==0&&dirty==oldDirty&&canUndo==oldUndo&&canRedo==oldRedo;
+        }
         if(ok)ok=savePath(argv[3])&&waitRequest()&&!dirty&&exists(argv[3]);
         FILE *f=_wfopen(argv[4],L"wb");if(f){fputs(ok?"OK\n":"ERROR\n",f);if(!ok){WCHAR status[8192];char text[32768];GetWindowTextW(statusLabel,status,8192);WideCharToMultiByte(CP_UTF8,0,status,-1,text,32768,NULL,NULL);fputs(text,f);}fclose(f);}DestroyWindow(window);LocalFree(argv);return ok?0:1;
     }
     if(argc>=4&&!wcscmp(argv[1],L"--preview")){
+        testMode=1;
         int ok=openPath(argv[2])&&waitRequest();
         if(ok){TreeView_SelectItem(tree,findItem("e2"));RedrawWindow(window,NULL,NULL,RDW_INVALIDATE|RDW_UPDATENOW|RDW_ALLCHILDREN);ok=savePreview(window,argv[3]);}
         DestroyWindow(window);LocalFree(argv);return ok?0:1;
     }
-    if(argc>=2)openPath(argv[1]);LocalFree(argv);MSG message;
+    if(argc>=2)openPath(argv[1]);LocalFree(argv);startUpdateCheck(0);MSG message;
     while(GetMessageW(&message,NULL,0,0)>0){
         if(message.message==WM_KEYDOWN && GetKeyState(VK_CONTROL)<0 && !busy){
             if(message.wParam=='Z'){if(canUndo)request(L"{\"command\":\"undo\"}",3);continue;}

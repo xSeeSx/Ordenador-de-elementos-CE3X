@@ -12,8 +12,37 @@ import tempfile
 sys.path.insert(0,str(Path(__file__).resolve().parent))
 import cex_codec as c
 
-VERSION='0.1.0'
+VERSION='0.2.0'
+UPDATE_API='https://api.github.com/repos/xSeeSx/Ordenador-de-elementos-CE3X/releases/latest'
 HEADERS={'CEXv2.3 Residencial','CE3Xv3.2 Residencial'}
+
+
+def check_updates():
+    """Consulta pública acotada; no lee ni transmite certificados o diagnósticos."""
+    import urllib.request
+    try:
+        request = urllib.request.Request(UPDATE_API, headers={
+            'Accept':'application/vnd.github+json', 'User-Agent':'Ordenador-CE3X/'+VERSION})
+        with urllib.request.urlopen(request, timeout=4) as response:
+            raw = response.read(131073)
+        if len(raw) > 131072:
+            raise ValueError('Respuesta demasiado larga')
+        release = json.loads(raw)
+        tag = release.get('tag_name', '')
+        match = re.fullmatch(r'v(\d{1,5})\.(\d{1,5})\.(\d{1,5})', tag)
+        if not match or release.get('draft') is not False or release.get('prerelease') is not False:
+            raise ValueError('No es una version publica estable')
+        version = '.'.join(match.groups())
+        package = 'Ordenador_CE3X_Windows_'+version.replace('.', '_')+'.zip'
+        if not any(asset.get('name') == package and asset.get('state') == 'uploaded'
+                   and isinstance(asset.get('size'), int) and asset['size'] > 0
+                   for asset in release.get('assets', [])):
+            raise ValueError('No hay paquete de Windows publicado')
+        status = 'UPDATE' if tuple(map(int, match.groups())) > tuple(map(int, VERSION.split('.'))) else 'CURRENT'
+        return status+'\t'+version
+    except Exception:
+        return 'UNAVAILABLE\t'
+
 
 
 def raw_blocks(data):
@@ -53,7 +82,8 @@ class Document:
         for row in self.env[0]:
             c.require(isinstance(row,list) and len(row)>=13 and isinstance(row[0],str),'E_ENVELOPE','Cerramiento desconocido')
             self.names.append(str(row[0]))
-        c.require(len(set(self.names))==len(self.names),'E_NAMES','Hay cerramientos con nombres duplicados; asociaciones ambiguas')
+        duplicates=sorted({name for name in self.names if self.names.count(name)>1})
+        c.require(not duplicates,'E_NAMES','Hay cerramientos con nombres duplicados: '+', '.join(repr(n) for n in duplicates)+'. Renómbralos en CE3X y vuelve a abrir el archivo.')
         self.parents=[None,[],[]]
         for w in self.env[1]:
             c.require(isinstance(w,c.CexObject) and isinstance(w.state.get('cerramientoAsociado'),str)
@@ -72,6 +102,12 @@ class Document:
         kind='ewb'.index(key[0]);idx=int(key[1:])
         c.require(idx<len(self.env[kind]),'E_SELECTION','Elemento inexistente')
         return kind,idx
+    def element_label(self,kind,idx):
+        row=self.env[kind][idx]
+        name=row.state['descripcion'] if kind==1 else row[0]
+        label=('cerramiento','hueco','puente térmico')[kind]+' '+repr(str(name))
+        if kind:label+=' (cerramiento '+repr(self.parents[kind][idx])+')'
+        return label
     def siblings(self,kind,idx):
         return self.order[kind] if kind==0 else [i for i in self.order[kind] if self.parents[kind][i]==self.parents[kind][idx]]
     def coordinate(self):
@@ -81,7 +117,7 @@ class Document:
         kind,idx=self.identify(key);siblings=self.siblings(kind,idx);pos=siblings.index(idx)
         if before:
             k,j=self.identify(before)
-            c.require(k==kind and j in siblings,'E_PARENT','Solo puedes mover huecos y puentes dentro de su cerramiento')
+            c.require(k==kind and j in siblings,'E_PARENT','No se puede mover '+self.element_label(kind,idx)+' delante de '+self.element_label(k,j)+'. Solo se pueden ordenar elementos del mismo tipo y cerramiento asociado.')
             target=siblings.index(j)
             if idx==j:return False
             reordered=siblings.copy();reordered.remove(idx);reordered.insert(reordered.index(j),idx)
@@ -158,10 +194,28 @@ def wire(document,selected='-',message=''):
     return '\t'.join(['OK',selected or '-',','.join(map(str,flags)),hx(message) or '-',rows])+'\n'
 
 
+def human_error(exc, command):
+    if isinstance(exc,c.ConversionError):
+        if exc.code in ('E_FORMAT','E_VERSION','E_PROTOCOL','E_TRUNCATED','E_BLOCK_COUNT','E_READ','E_OFFSET'):
+            return 'No se puede abrir o verificar este certificado. Comprueba que sea un archivo CEX residencial de CE3X 2.3 o 3.2 y que no esté dañado. No se ha guardado ningún cambio.'
+        if exc.code in ('E_PICKLE_REDUCE','E_PICKLE_INST_ARGS','E_PICKLE_STATE','E_PICKLE_OPCODE','E_ENCODING','E_GLOBAL_NAME','E_OBJECT_STYLE'):
+            return 'El certificado contiene una estructura que esta versión no reconoce. No se ha guardado ningún cambio.'
+        if exc.code=='E_PRESERVATION':
+            return 'La comprobación de seguridad ha detectado cambios distintos del orden. No se ha guardado la copia. El original se conserva.'
+        return str(exc)
+    if isinstance(exc,FileNotFoundError):
+        return 'No se encuentra el archivo de origen o la carpeta de destino. Comprueba la ruta y vuelve a intentarlo.'
+    if isinstance(exc,PermissionError):
+        return 'No hay permiso para '+('guardar la copia. Cierra el archivo de destino si está abierto o elige otra carpeta.' if command=='save' else 'leer el archivo. Comprueba que esté accesible.')
+    if isinstance(exc,OSError):
+        return 'No se pudo '+('guardar la copia' if command=='save' else 'leer el archivo')+'. Comprueba el acceso y el espacio disponible.'
+    return 'No se pudo completar la operación. El original no se modifica. Si el problema persiste, comunica la incidencia indicando qué acción estabas realizando.'
+
+
 def serve():
     doc=None
     for line in sys.stdin:
-        selected='-'
+        selected='-';cmd=''
         try:
             req=json.loads(line);cmd=req['command'];message=''
             if cmd=='exit':return
@@ -176,9 +230,11 @@ def serve():
                 elif cmd!='snapshot':raise ValueError('Operacion desconocida')
             sys.stdout.write(wire(doc,selected,message))
         except Exception as exc:
-            sys.stdout.write('ERROR\t'+str(exc).encode('utf-8').hex()+'\n')
+            sys.stdout.write('ERROR\t'+human_error(exc,cmd).encode('utf-8').hex()+'\n')
         sys.stdout.flush()
 
 
 if __name__=='__main__':
-    parser=argparse.ArgumentParser();parser.add_argument('command',choices=['serve']);args=parser.parse_args();serve()
+    parser=argparse.ArgumentParser();parser.add_argument('command',choices=['serve','check-updates']);args=parser.parse_args()
+    if args.command=='check-updates':print(check_updates())
+    else:serve()

@@ -16,11 +16,17 @@ Al mover un cerramiento, sus huecos y puentes lo acompañan. Dentro de cada cerr
 
 Deshacer `Ctrl+Z`, rehacer `Ctrl+Y`, abrir `Ctrl+O`, guardar copia `Ctrl+S`. También puedes abrir un archivo arrastrándolo a la ventana. Ventana redimensionable con el mismo estilo técnico compacto del [conversor CE3X](https://github.com/xSeeSx/Conversor-CE3X-3.2-a-CE3X-2.3).
 
+## Actualizaciones
+
+La aplicación consulta GitHub al abrirse. También puedes pulsar **Buscar actualizaciones**. Si hay una versión posterior con paquete de Windows publicado, aparece un botón de descarga. La consulta no bloquea la ordenación ni envía certificados, rutas ni datos del usuario. Descarga el ZIP nuevo y extráelo en otra carpeta. Sin conexión, el ordenador sigue funcionando.
+
+Los errores explican qué acción falló y, cuando se conoce, qué elemento está afectado. Si no se reconoce una estructura o falla la comprobación de seguridad, no se guarda la copia.
+
 ## Qué conserva
 
 Mantiene la versión del archivo, todas las propiedades de los elementos y sus asociaciones. Solo cambia el orden de las listas de la envolvente. Los otros 14 bloques del CEX se conservan byte a byte, incluidas instalaciones, mejoras, sombras e informes. El original no se sobrescribe. No recalcula el certificado ni genera logs automáticamente.
 
-**Versión experimental 0.1.0.** Se han ensayado la lectura, reordenación y conservación estructural con muestras sintéticas y ejemplos oficiales residenciales de ambas versiones. Queda pendiente comprobar visualmente los resultados dentro de CE3X y su informe. El programa rechaza estructuras desconocidas y nombres de cerramientos duplicados, porque harían ambiguas las asociaciones.
+**Versión 0.2.0, todavía experimental.** Se han ensayado la lectura, reordenación y conservación estructural con muestras sintéticas y ejemplos oficiales residenciales de ambas versiones. Queda pendiente comprobar visualmente los resultados dentro de CE3X y su informe. El programa rechaza estructuras desconocidas y nombres de cerramientos duplicados, porque harían ambiguas las asociaciones.
 
 Si encuentras un fallo, [abre una incidencia](https://github.com/xSeeSx/Ordenador-de-elementos-CE3X/issues). Describe la versión de CE3X, el movimiento realizado y el resultado. Evita adjuntar proyectos con datos personales sin revisarlos.
 
