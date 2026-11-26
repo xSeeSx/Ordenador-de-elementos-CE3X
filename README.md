@@ -9,12 +9,18 @@ Herramienta para reordenar cerramientos, huecos y puentes térmicos en archivos 
 Descarga el ZIP de Windows desde Releases, extrae todo su contenido y abre `Ordenador_CE3X.exe`. Incluye Python, no necesitas instalarlo. Windows 10/11 de 64 bits.
 
 1. Abre un `.cex` residencial de CE3X 2.3 o 3.2.
-2. Selecciona un cerramiento, un hueco o un puente térmico. Usa Subir, Bajar, Al inicio, Al final o arrástralo delante de otro elemento de la misma clase.
+2. Selecciona un cerramiento, un hueco o un puente térmico. Usa Subir, Bajar, Al inicio, Al final o arrástralo antes o después de otro elemento compatible.
 3. Pulsa Guardar copia. Se propone `nombre_ORDENADO.cex` en la carpeta de origen.
 
 Al mover un cerramiento, sus huecos y puentes lo acompañan. Dentro de cada cerramiento puedes ordenar los huecos y los puentes por separado. No permite cambiarlos de cerramiento.
 
 Deshacer `Ctrl+Z`, rehacer `Ctrl+Y`, abrir `Ctrl+O`, guardar copia `Ctrl+S`. También puedes abrir un archivo arrastrándolo a la ventana. Ventana redimensionable con el mismo estilo técnico compacto del [conversor CE3X](https://github.com/xSeeSx/Conversor-CE3X-3.2-a-CE3X-2.3).
+
+## Interfaz de ordenación
+
+La lista muestra filas compactas con agarres, jerarquía visual y grupos plegables. Al arrastrar, las filas vecinas se deslizan dejando un espacio de inserción. Los cerramientos arrastran todo su grupo, incluidos los elementos ocultos al plegarlo. Puedes soltar antes o después, cancelar con Esc y desplazarte automáticamente cerca de los bordes. Los destinos incompatibles se bloquean; el archivo no cambia hasta que guardas la copia.
+
+Los botones siguen disponibles sin arrastrar. Ctrl + flechas arriba/abajo mueve la selección; las flechas izquierda/derecha permiten plegar o desplegar grupos. La animación de 167 ms respeta la configuración de animaciones de Windows.
 
 ## Actualizaciones
 
@@ -26,7 +32,7 @@ Los errores explican qué acción falló y, cuando se conoce, qué elemento est�
 
 Mantiene la versión del archivo, todas las propiedades de los elementos y sus asociaciones. Solo cambia el orden de las listas de la envolvente. Los otros 14 bloques del CEX se conservan byte a byte, incluidas instalaciones, mejoras, sombras e informes. El original no se sobrescribe. No recalcula el certificado ni genera logs automáticamente.
 
-**Versión 0.2.0, todavía experimental.** Se han ensayado la lectura, reordenación y conservación estructural con muestras sintéticas y ejemplos oficiales residenciales de ambas versiones. Queda pendiente comprobar visualmente los resultados dentro de CE3X y su informe. El programa rechaza estructuras desconocidas y nombres de cerramientos duplicados, porque harían ambiguas las asociaciones.
+**Versión 0.3.0, todavía experimental.** Se han ensayado la lectura, reordenación y conservación estructural con muestras sintéticas y ejemplos oficiales residenciales de ambas versiones. Queda pendiente comprobar visualmente los resultados dentro de CE3X y su informe. El programa rechaza estructuras desconocidas y nombres de cerramientos duplicados, porque harían ambiguas las asociaciones.
 
 Si encuentras un fallo, [abre una incidencia](https://github.com/xSeeSx/Ordenador-de-elementos-CE3X/issues). Describe la versión de CE3X, el movimiento realizado y el resultado. Evita adjuntar proyectos con datos personales sin revisarlos.
 

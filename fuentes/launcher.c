@@ -27,12 +27,16 @@
 #define IDC_SAVE 110
 #define IDC_STATUS 113
 #define IDC_UPDATES 121
+#define IDC_SLIDES 122
+#define IDC_HINT 123
+#define IDC_EXPAND 124
+#define IDC_COLLAPSE 125
 #define UI_BACKGROUND RGB(245,246,249)
 #define UI_HEADER RGB(234,237,247)
 #define UI_BORDER RGB(204,210,223)
 #define UI_TEXT RGB(32,38,50)
 #define UI_ACCENT RGB(58,69,154)
-static HWND window,sourceEdit,tree,statusLabel;
+static HWND window,sourceEdit,tree,statusLabel,slideList;
 static HFONT font,titleFont,strongFont,smallFont;
 static HBRUSH backgroundBrush,panelBrush,headerBrush;
 static int uiDpi=96,busy,operation,hasDocument,dirty,canUndo,canRedo,hasAttempt,lastResult;
@@ -54,6 +58,9 @@ static Node *nodes; static int nodeCount;
 static char dragId[32],lastSelected[32];
 static int dragging;
 static void layoutWindow(void);
+static void refreshSlides(void);
+static void updateMoveButtons(void);
+static void syncSelection(void);
 static int px(int v){return MulDiv(v,uiDpi,96);}
 static int exists(const WCHAR *p){DWORD a=GetFileAttributesW(p);return a!=INVALID_FILE_ATTRIBUTES && !(a&FILE_ATTRIBUTE_DIRECTORY);}
 static void report(const WCHAR *s){if(statusLabel)SetWindowTextW(statusLabel,s);}
@@ -61,11 +68,12 @@ static void setBusy(int value){
     busy=value;
     if(!window)return;
     EnableWindow(GetDlgItem(window,IDC_BROWSE),!value);
-    EnableWindow(tree,!value);
+    EnableWindow(slideList,!value);
     for(int id=IDC_UP;id<=IDC_LAST;id++)EnableWindow(GetDlgItem(window,id),!value&&hasDocument);
     EnableWindow(GetDlgItem(window,IDC_UNDO),!value&&canUndo);
     EnableWindow(GetDlgItem(window,IDC_REDO),!value&&canRedo);
     EnableWindow(GetDlgItem(window,IDC_SAVE),!value&&hasDocument);
+    updateMoveButtons();
 }
 static int addArg(WCHAR *command, size_t capacity, const WCHAR *value) {
     size_t length = wcslen(command);
@@ -109,7 +117,7 @@ static void applyUpdateReply(const char *reply, int manual) {
         swprintf(updateVersion, ARRAYSIZE(updateVersion), L"%u.%u.%u", major, minor, patch);
         WCHAR label[96]; swprintf(label, ARRAYSIZE(label), L"Descargar v%ls", updateVersion);
         SetWindowTextW(button, label);
-        SetWindowTextW(GetDlgItem(window, IDC_VERSION), L"v0.2.0  |  Nueva versión disponible");
+        SetWindowTextW(GetDlgItem(window, IDC_VERSION), L"v0.3.0  |  Nueva versión disponible");
         if (manual && MessageBoxW(window,
                 L"Hay una versión nueva. ¿Quieres abrir su página de descarga?\r\n\r\nExtrae el ZIP nuevo en otra carpeta.",
                 L"Actualización disponible", MB_YESNO | MB_ICONINFORMATION | MB_DEFBUTTON2) == IDYES)
@@ -372,7 +380,7 @@ static void received(void){
     if(!tag||strcmp(tag,"OK")||!sel||!flags||!message||!rows){report(L"Respuesta del motor no válida.");setBusy(0);return;}
     sscanf(flags,"%d,%d,%d",&dirty,&canUndo,&canRedo);
     if(!renderTree(rows,sel)){report(L"No se pudo mostrar el árbol.");setBusy(0);return;}
-    hasDocument=1;lastResult=1;
+    hasDocument=1;lastResult=1;refreshSlides();
     if(operation==1){wcscpy(sourcePath,pendingPath);SetWindowTextW(sourceEdit,sourcePath);}
     if(strcmp(message,"-")){WCHAR *m=unhex(message);report(m?m:L"Operación completada.");free(m);}
     else report(dirty?L"Cambios pendientes de guardar.":L"Sin cambios pendientes.");
@@ -426,15 +434,19 @@ static int moveId(const char *id,const char *direction,const char *before){
     return request(json,3);
 }
 static void moveSelected(const char *direction){moveId(itemId(TreeView_GetSelection(tree)),direction,NULL);}
+#include "sliding_list.h"
 static void layoutWindow(void){
-    if(!tree)return;RECT r;GetClientRect(window,&r);int w=MulDiv(r.right,96,uiDpi),h=MulDiv(r.bottom,96,uiDpi);
+    if(!slideList)return;RECT r;GetClientRect(window,&r);int w=MulDiv(r.right,96,uiDpi),h=MulDiv(r.bottom,96,uiDpi);
     MoveWindow(GetDlgItem(window,IDC_TITLE),px(36),px(31),px(w-72),px(33),TRUE);
     MoveWindow(GetDlgItem(window,IDC_VERSION),px(37),px(66),px(w-300),px(18),TRUE);
     MoveWindow(GetDlgItem(window,IDC_UPDATES),px(w-250),px(53),px(214),px(28),TRUE);
     MoveWindow(sourceEdit,px(36),px(121),px(w-218),px(30),TRUE);MoveWindow(GetDlgItem(window,IDC_BROWSE),px(w-170),px(121),px(134),px(30),TRUE);
-    MoveWindow(tree,px(20),px(180),px(w-196),px(h-246),TRUE);
+    MoveWindow(GetDlgItem(window,IDC_HINT),px(20),px(178),px(w-40),px(24),TRUE);
+    MoveWindow(slideList,px(20),px(208),px(w-196),px(h-274),TRUE);
     int ids[]={IDC_UP,IDC_DOWN,IDC_FIRST,IDC_LAST,IDC_UNDO,IDC_REDO};
-    for(int i=0;i<6;i++)MoveWindow(GetDlgItem(window,ids[i]),px(w-160),px(180+i*42+(i>=4?14:0)),px(140),px(32),TRUE);
+    for(int i=0;i<6;i++)MoveWindow(GetDlgItem(window,ids[i]),px(w-160),px(208+i*35+(i>=4?8:0)),px(140),px(29),TRUE);
+    MoveWindow(GetDlgItem(window,IDC_EXPAND),px(w-160),px(434),px(140),px(27),TRUE);
+    MoveWindow(GetDlgItem(window,IDC_COLLAPSE),px(w-160),px(465),px(140),px(27),TRUE);
     MoveWindow(GetDlgItem(window,IDC_SAVE),px(w-200),px(h-50),px(180),px(32),TRUE);
     MoveWindow(statusLabel,px(20),px(h-51),px(w-240),px(40),TRUE);InvalidateRect(window,NULL,TRUE);
 }
@@ -442,62 +454,53 @@ static void initializeUI(void){
     font=makeFont(15,FW_NORMAL);titleFont=makeFont(25,FW_SEMIBOLD);strongFont=makeFont(15,FW_SEMIBOLD);smallFont=makeFont(13,FW_NORMAL);
     backgroundBrush=CreateSolidBrush(UI_BACKGROUND);panelBrush=CreateSolidBrush(RGB(255,255,255));headerBrush=CreateSolidBrush(UI_HEADER);
     HWND title=control(L"STATIC",L"Ordenador de elementos CE3X",SS_CENTERIMAGE,36,31,688,33,IDC_TITLE);SendMessageW(title,WM_SETFONT,(WPARAM)titleFont,TRUE);
-    HWND version=control(L"STATIC",L"v0.2.0  |  Residencial 2.3 y 3.2",0,37,66,500,18,IDC_VERSION);SendMessageW(version,WM_SETFONT,(WPARAM)smallFont,TRUE);
+    HWND version=control(L"STATIC",L"v0.3.0  |  Residencial 2.3 y 3.2",0,37,66,500,18,IDC_VERSION);SendMessageW(version,WM_SETFONT,(WPARAM)smallFont,TRUE);
     control(L"BUTTON",L"Buscar actualizaciones",WS_TABSTOP,570,53,214,28,IDC_UPDATES);
     sourceEdit=control(L"EDIT",L"",ES_READONLY|ES_AUTOHSCROLL|WS_TABSTOP,36,121,550,30,IDC_SOURCE);
     control(L"BUTTON",L"Abrir .cex...",WS_TABSTOP,598,121,126,30,IDC_BROWSE);
     tree=control(WC_TREEVIEWW,L"",WS_TABSTOP|WS_BORDER|TVS_HASLINES|TVS_LINESATROOT|TVS_HASBUTTONS|TVS_SHOWSELALWAYS,20,180,564,370,IDC_TREE);
-    TreeView_SetBkColor(tree,RGB(255,255,255));TreeView_SetTextColor(tree,UI_TEXT);TreeView_SetItemHeight(tree,px(28));
+    ShowWindow(tree,SW_HIDE);initializeSlides();
+    HWND hint=control(L"STATIC",L"Arrastra las filas para ordenar  |  Ctrl + ↑ / ↓  |  Esc cancela",0,20,178,700,24,IDC_HINT);
+    SendMessageW(hint,WM_SETFONT,(WPARAM)smallFont,TRUE);
     const WCHAR *labels[]={L"Subir",L"Bajar",L"Al inicio",L"Al final",L"Deshacer",L"Rehacer"};int ids[]={IDC_UP,IDC_DOWN,IDC_FIRST,IDC_LAST,IDC_UNDO,IDC_REDO};
     for(int i=0;i<6;i++)control(L"BUTTON",labels[i],WS_TABSTOP,600,180+i*42,140,32,ids[i]);
+    control(L"BUTTON",L"Expandir todo",WS_TABSTOP,600,434,140,27,IDC_EXPAND);
+    control(L"BUTTON",L"Contraer todo",WS_TABSTOP,600,465,140,27,IDC_COLLAPSE);
     control(L"BUTTON",L"Guardar copia...",WS_TABSTOP,560,550,180,32,IDC_SAVE);
     statusLabel=control(L"STATIC",L"",0,20,552,500,40,IDC_STATUS);SendMessageW(statusLabel,WM_SETFONT,(WPARAM)smallFont,TRUE);
     layoutWindow();setBusy(0);DragAcceptFiles(window,TRUE);
 }
-static void cancelDrag(void){dragging=0;TreeView_SelectDropTarget(tree,NULL);if(GetCapture()==window)ReleaseCapture();}
 static LRESULT CALLBACK windowProc(HWND hwnd,UINT msg,WPARAM wp,LPARAM lp){
     switch(msg){
     case WM_CREATE:window=hwnd;initializeUI();return 0;
     case WM_SIZE:layoutWindow();return 0;
-    case WM_GETMINMAXINFO:{MINMAXINFO *m=(MINMAXINFO*)lp;m->ptMinTrackSize.x=px(700);m->ptMinTrackSize.y=px(590);return 0;}
+    case WM_GETMINMAXINFO:{MINMAXINFO *m=(MINMAXINFO*)lp;m->ptMinTrackSize.x=px(700);m->ptMinTrackSize.y=px(625);return 0;}
     case WM_COMMAND:
         if(LOWORD(wp)==IDC_UPDATES){startUpdateCheck(1);return 0;}
         if(busy)return 0;
         switch(LOWORD(wp)){
         case IDC_BROWSE:chooseSource();break;
+        case IDC_EXPAND:expandAll(1);break;case IDC_COLLAPSE:expandAll(0);break;
         case IDC_SAVE:chooseSave();break;
         case IDC_UP:moveSelected("up");break;case IDC_DOWN:moveSelected("down");break;
         case IDC_FIRST:moveSelected("first");break;case IDC_LAST:moveSelected("last");break;
         case IDC_UNDO:request(L"{\"command\":\"undo\"}",3);break;case IDC_REDO:request(L"{\"command\":\"redo\"}",3);break;
         }return 0;
     case WM_NOTIFY:{NMHDR *n=(NMHDR*)lp;
-        if(n->hwndFrom==tree && n->code==TVN_BEGINDRAGW && !busy){
-            NMTREEVIEWW *tv=(NMTREEVIEWW*)lp;const char *id=itemId(tv->itemNew.hItem);
-            if(movable(id)){strcpy(dragId,id);dragging=1;TreeView_SelectItem(tree,tv->itemNew.hItem);SetCapture(window);}return 0;
-        }
-        if(n->hwndFrom==tree && n->code==TVN_KEYDOWN && !busy){
-            NMTVKEYDOWN *key=(NMTVKEYDOWN*)lp;
-            if(GetKeyState(VK_CONTROL)<0 && key->wVKey==VK_UP)moveSelected("up");
-            if(GetKeyState(VK_CONTROL)<0 && key->wVKey==VK_DOWN)moveSelected("down");
-        }return 0;}
-    case WM_MOUSEMOVE:
-        if(dragging){POINT p;GetCursorPos(&p);ScreenToClient(tree,&p);TVHITTESTINFO hit={0};hit.pt=p;TreeView_HitTest(tree,&hit);
-            const char *id=itemId(hit.hItem);TreeView_SelectDropTarget(tree,movable(id)?hit.hItem:NULL);
-            RECT r;GetClientRect(tree,&r);if(p.y<px(24))SendMessageW(tree,WM_VSCROLL,SB_LINEUP,0);if(p.y>r.bottom-px(24))SendMessageW(tree,WM_VSCROLL,SB_LINEDOWN,0);
-        }return 0;
-    case WM_LBUTTONUP:
-        if(dragging){char target[32]="";const char *id=itemId(TreeView_GetDropHilight(tree));if(id)strncpy(target,id,31);cancelDrag();if(target[0])moveId(dragId,NULL,target);}return 0;
-    case WM_CAPTURECHANGED:if(dragging){dragging=0;TreeView_SelectDropTarget(tree,NULL);}return 0;
-    case WM_KEYDOWN:if(wp==VK_ESCAPE)cancelDrag();return 0;
+        if(n->hwndFrom==tree&&n->code==TVN_SELCHANGEDW&&!busy)syncSelection();
+        return 0;}
+    case WM_SETTINGCHANGE:SystemParametersInfoW(SPI_GETCLIENTAREAANIMATION,0,&motion,0);return 0;
+    case WM_KEYDOWN:if(wp==VK_ESCAPE)cancelSlide(1);return 0;
     case WM_DROPFILES:{HDROP d=(HDROP)wp;WCHAR p[PATHCAP];if(!busy&&DragQueryFileW(d,0,p,PATHCAP)&&discardChanges())openPath(p);DragFinish(d);return 0;}
-    case WM_TIMER:if(wp==2)pollUpdateCheck();else pollEngine();return 0;
+    case WM_TIMER:if(wp==3)tickSlides();else if(wp==2)pollUpdateCheck();else pollEngine();return 0;
     case WM_PAINT:{PAINTSTRUCT p;HDC dc=BeginPaint(hwnd,&p);paintWindow(dc);EndPaint(hwnd,&p);return 0;}
     case WM_PRINTCLIENT:paintWindow((HDC)wp);return 0;
-    case WM_DRAWITEM:drawButton((const DRAWITEMSTRUCT*)lp);return TRUE;
+    case WM_MEASUREITEM:if(wp==IDC_SLIDES){((MEASUREITEMSTRUCT*)lp)->itemHeight=px(31);return TRUE;}break;
+    case WM_DRAWITEM:if(wp!=IDC_SLIDES)drawButton((const DRAWITEMSTRUCT*)lp);return TRUE;
     case WM_CTLCOLORSTATIC:{int id=GetDlgCtrlID((HWND)lp);HDC dc=(HDC)wp;int head=id==IDC_TITLE||id==IDC_VERSION;
         SetTextColor(dc,id==IDC_STATUS||id==IDC_VERSION?RGB(91,100,118):UI_TEXT);SetBkColor(dc,head?UI_HEADER:UI_BACKGROUND);return (LRESULT)(head?headerBrush:backgroundBrush);}
     case WM_CLOSE:if(busy){report(L"Espera a que termine la operación.");return 0;}if(discardChanges())DestroyWindow(hwnd);return 0;
-    case WM_DESTROY:closeUpdateCheck();closeEngine();free(nodes);DeleteObject(font);DeleteObject(titleFont);DeleteObject(strongFont);DeleteObject(smallFont);DeleteObject(backgroundBrush);DeleteObject(panelBrush);DeleteObject(headerBrush);PostQuitMessage(0);return 0;
+    case WM_DESTROY:KillTimer(window,3);closeUpdateCheck();closeEngine();free(rows);free(nodes);DeleteObject(font);DeleteObject(titleFont);DeleteObject(strongFont);DeleteObject(smallFont);DeleteObject(backgroundBrush);DeleteObject(panelBrush);DeleteObject(headerBrush);PostQuitMessage(0);return 0;
     }
     return DefWindowProcW(hwnd,msg,wp,lp);
 }
@@ -518,17 +521,26 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE previous,PWSTR cmd,int show){
     if(argc>=5&&!wcscmp(argv[1],L"--self-test")){
         testMode=1;
         int ok=openPath(argv[2])&&waitRequest();
-        if(ok){TreeView_SelectItem(tree,findItem("e2"));SendMessageW(window,WM_COMMAND,IDC_FIRST,0);ok=waitRequest()&&dirty;}
+        if(ok){selectRow(idIndex("e2"));SendMessageW(window,WM_COMMAND,IDC_FIRST,0);ok=waitRequest()&&dirty;}
         if(ok){SendMessageW(window,WM_COMMAND,IDC_UNDO,0);ok=waitRequest()&&!dirty;}
         if(ok){SendMessageW(window,WM_COMMAND,IDC_REDO,0);ok=waitRequest()&&dirty;}
         if(ok){
-            NMTREEVIEWW drag={0};drag.hdr.hwndFrom=tree;drag.hdr.code=TVN_BEGINDRAGW;drag.itemNew.hItem=findItem("w2");
-            SendMessageW(window,WM_NOTIFY,200,(LPARAM)&drag);TreeView_SelectDropTarget(tree,findItem("w0"));
-            SendMessageW(window,WM_LBUTTONUP,0,0);ok=waitRequest();
+            int src=idIndex("w2"),dst=idIndex("w0");
+            ok=src>=0&&dst>=0&&compatible(src,dst)&&!compatible(src,idIndex("w1"));
+            if(ok){
+                selectRow(src);startDrag(src,rowHeight/2);boundary=dst;retarget();
+                ok=targetIndex(dst)==dst+1&&finishDrag()&&waitRequest();
+            }
+            if(ok){
+                src=idIndex("e2");int other=idIndex("e0");startDrag(src,rowHeight/2);
+                ok=span>1&&other>=0;boundary=blockEnd(other);retarget();
+                ok=ok&&targetIndex(other)<other;cancelSlide(1);
+                ok=ok&&dirty&&draggingRow<0;
+            }
         }
         if(ok){
             int oldDirty=dirty,oldUndo=canUndo,oldRedo=canRedo; WCHAR label[96];
-            applyUpdateReply("UNAVAILABLE\t",0);applyUpdateReply("CURRENT\t0.2.0",0);
+            applyUpdateReply("UNAVAILABLE\t",0);applyUpdateReply("CURRENT\t0.3.0",0);
             ok=!updateVersion[0];applyUpdateReply("UPDATE\t99.1.2\n",0);
             GetWindowTextW(GetDlgItem(window,IDC_UPDATES),label,ARRAYSIZE(label));
             ok=ok&&wcscmp(label,L"Descargar v99.1.2")==0&&dirty==oldDirty&&canUndo==oldUndo&&canRedo==oldRedo;
@@ -539,11 +551,12 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE previous,PWSTR cmd,int show){
     if(argc>=4&&!wcscmp(argv[1],L"--preview")){
         testMode=1;
         int ok=openPath(argv[2])&&waitRequest();
-        if(ok){TreeView_SelectItem(tree,findItem("e2"));RedrawWindow(window,NULL,NULL,RDW_INVALIDATE|RDW_UPDATENOW|RDW_ALLCHILDREN);ok=savePreview(window,argv[3]);}
+        if(ok){selectRow(idIndex("e2"));RedrawWindow(window,NULL,NULL,RDW_INVALIDATE|RDW_UPDATENOW|RDW_ALLCHILDREN);ok=savePreview(window,argv[3]);}
         DestroyWindow(window);LocalFree(argv);return ok?0:1;
     }
     if(argc>=2)openPath(argv[1]);LocalFree(argv);startUpdateCheck(0);MSG message;
     while(GetMessageW(&message,NULL,0,0)>0){
+        if(message.message==WM_KEYDOWN&&message.wParam==VK_ESCAPE&&(pressed>=0||draggingRow>=0)){cancelSlide(1);continue;}
         if(message.message==WM_KEYDOWN && GetKeyState(VK_CONTROL)<0 && !busy){
             if(message.wParam=='Z'){if(canUndo)request(L"{\"command\":\"undo\"}",3);continue;}
             if(message.wParam=='Y'){if(canRedo)request(L"{\"command\":\"redo\"}",3);continue;}

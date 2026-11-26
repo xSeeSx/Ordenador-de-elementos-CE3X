@@ -12,7 +12,7 @@ import tempfile
 sys.path.insert(0,str(Path(__file__).resolve().parent))
 import cex_codec as c
 
-VERSION='0.2.0'
+VERSION='0.3.0'
 UPDATE_API='https://api.github.com/repos/xSeeSx/Ordenador-de-elementos-CE3X/releases/latest'
 HEADERS={'CEXv2.3 Residencial','CE3Xv3.2 Residencial'}
 

@@ -1,5 +1,13 @@
 # Notas de versión
 
+## 0.3.0 - 2026-11-26
+
+- Lista de filas compactas con jerarquía, agarres y grupos plegables.
+- Previsualización por deslizamiento, indicador de inserción y arrastre de cerramientos completos.
+- Inserción antes o después, desplazamiento automático y cancelación con Esc.
+- Bloqueo de destinos incompatibles, botones contextuales y navegación por teclado.
+- Animación breve respetando las preferencias de Windows. Motor CEX sin cambios.
+
 ## 0.2.0 - 2026-11-26
 
 - Consulta automática y manual de nuevas versiones, sin bloquear la interfaz.
